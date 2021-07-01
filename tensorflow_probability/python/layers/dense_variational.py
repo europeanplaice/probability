@@ -18,6 +18,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import warnings
+
 import tensorflow.compat.v2 as tf
 
 from tensorflow_probability.python import random as tfp_random
@@ -56,6 +58,7 @@ doc_args = """units: Integer or Long, dimensionality of the output space.
     surrogate posterior and computes or approximates the KL divergence. The
     distributions are `tfd.Distribution`-like instances and the
     sample is a `Tensor`.
+  use_bias: Boolean, whether the layer uses a bias. Default value: True.
   bias_posterior_fn: Python `callable` which creates
     `tfd.Distribution` instance representing the surrogate
     posterior of the `bias` parameter. Default value:
@@ -107,6 +110,7 @@ class _DenseVariational(tf.keras.layers.Layer):
       bias_posterior_tensor_fn=lambda d: d.sample(),
       bias_prior_fn=None,
       bias_divergence_fn=lambda q, p, ignore: kl_lib.kl_divergence(q, p),
+      use_bias=True,
       **kwargs):
     # pylint: disable=g-doc-args
     """Construct layer.
@@ -125,6 +129,7 @@ class _DenseVariational(tf.keras.layers.Layer):
     self.kernel_posterior_tensor_fn = kernel_posterior_tensor_fn
     self.kernel_prior_fn = kernel_prior_fn
     self.kernel_divergence_fn = kernel_divergence_fn
+    self.use_bias = use_bias
     self.bias_posterior_fn = bias_posterior_fn
     self.bias_posterior_tensor_fn = bias_posterior_tensor_fn
     self.bias_prior_fn = bias_prior_fn
@@ -153,6 +158,11 @@ class _DenseVariational(tf.keras.layers.Layer):
           dtype, [in_size, self.units], 'kernel_prior',
           self.trainable, self.add_variable)
 
+    if self.bias_posterior_fn is not None and self.use_bias is False:
+      warnings.warn(
+        "TFP sets self.bias_posterior_fn = None "
+        "as self.use_bias is False.")
+      self.bias_posterior_fn = None
     if self.bias_posterior_fn is None:
       self.bias_posterior = None
     else:
@@ -182,12 +192,13 @@ class _DenseVariational(tf.keras.layers.Layer):
         self.kernel_prior,
         self.kernel_posterior_tensor,
         name='divergence_kernel')
-    self._apply_divergence(
-        self.bias_divergence_fn,
-        self.bias_posterior,
-        self.bias_prior,
-        self.bias_posterior_tensor,
-        name='divergence_bias')
+    if self.use_bias:
+      self._apply_divergence(
+          self.bias_divergence_fn,
+          self.bias_posterior,
+          self.bias_prior,
+          self.bias_posterior_tensor,
+          name='divergence_bias')
     return outputs
 
   def compute_output_shape(self, input_shape):
@@ -641,6 +652,7 @@ class DenseFlipout(_DenseVariational):
       bias_prior_fn=None,
       bias_divergence_fn=lambda q, p, ignore: kl_lib.kl_divergence(q, p),
       seed=None,
+      use_bias=True,
       **kwargs):
     # pylint: disable=g-doc-args
     """Construct layer.
@@ -664,6 +676,7 @@ class DenseFlipout(_DenseVariational):
         bias_posterior_tensor_fn=bias_posterior_tensor_fn,
         bias_prior_fn=bias_prior_fn,
         bias_divergence_fn=bias_divergence_fn,
+        use_bias=use_bias,
         **kwargs)
     # Set additional attributes which do not exist in the parent class.
     self.seed = seed
