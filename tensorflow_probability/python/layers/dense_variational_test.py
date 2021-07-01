@@ -530,5 +530,14 @@ class DenseVariational(test_util.TestCase):
     self.assertLen(grads, 9)
     self.assertAllNotNone(grads)
 
+class DenseFlipout(test_util.TestCase):
+
+  def testUseBias(self):
+    nobias = tfp.layers.DenseFlipout(1, use_bias=False)(tf.zeros([1, 1]))
+    yesbias = tfp.layers.DenseFlipout(1, use_bias=True)(tf.zeros([1, 1]))
+    nobiasfn = tfp.layers.DenseFlipout(1, bias_posterior_fn=None)(tf.zeros([1, 1]))
+    self.assertNotEqual(nobias.numpy(), yesbias.numpy())
+    self.assertEqual(nobias.numpy(), nobiasfn.numpy())
+
 if __name__ == '__main__':
   tf.test.main()
