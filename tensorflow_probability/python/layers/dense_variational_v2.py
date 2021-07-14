@@ -17,6 +17,8 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from tensorflow_probability.python import random as tfp_random
+from tensorflow_probability.python.util import SeedStream
 
 import tensorflow.compat.v2 as tf
 
@@ -134,7 +136,11 @@ class DenseVariational(tf.keras.layers.Layer):
         tf.shape(kernel)[:-1],
         [prev_units, self.units],
     ], axis=0))
+
+    _apply_variational_kernel = getattr(self, "_apply_variational_kernel", None)
     outputs = tf.matmul(inputs, kernel)
+    if callable(_apply_variational_kernel):
+      outputs += self._apply_variational_kernel(inputs, kernel)
 
     if self.use_bias:
       outputs = tf.nn.bias_add(outputs, bias)
@@ -179,3 +185,99 @@ def _make_kl_divergence_penalty(
       return tf.reduce_sum(kl, name='batch_total_kl_divergence')
 
   return _fn
+
+
+class DenseFlipout(DenseVariational):
+  """Densely-connected layer class with Flipout estimator.
+
+  This layer implements the Bayesian variational inference analogue to
+  a dense layer by assuming the `kernel` and/or the `bias` are drawn
+  from distributions. By default, the layer implements a stochastic
+  forward pass via sampling from the kernel and bias posteriors,
+
+  ```none
+  kernel, bias ~ posterior
+  outputs = activation(matmul(inputs, kernel) + bias)
+  ```
+
+  It uses the Flipout estimator [(Wen et al., 2018)][1], which performs a Monte
+  Carlo approximation of the distribution integrating over the `kernel` and
+  `bias`. Flipout uses roughly twice as many floating point operations as the
+  reparameterization estimator but has the advantage of significantly lower
+  variance.
+
+  #### References
+
+  [1]: Yeming Wen, Paul Vicol, Jimmy Ba, Dustin Tran, and Roger Grosse. Flipout:
+       Efficient Pseudo-Independent Weight Perturbations on Mini-Batches. In
+       _International Conference on Learning Representations_, 2018.
+       https://arxiv.org/abs/1803.04386
+  """
+
+  def __init__(self,
+               units,
+               make_posterior_fn,
+               make_prior_fn,
+               kl_weight=None,
+               kl_use_exact=False,
+               activation=None,
+               use_bias=True,
+               activity_regularizer=None,
+               seed=None,
+               **kwargs):
+    """Creates the `DenseVariational` layer.
+
+    Args:
+      units: Positive integer, dimensionality of the output space.
+      make_posterior_fn: Python callable taking `tf.size(kernel)`,
+        `tf.size(bias)`, `dtype` and returns another callable which takes an
+        input and produces a `tfd.Distribution` instance.
+      make_prior_fn: Python callable taking `tf.size(kernel)`, `tf.size(bias)`,
+        `dtype` and returns another callable which takes an input and produces a
+        `tfd.Distribution` instance.
+      kl_weight: Amount by which to scale the KL divergence loss between prior
+        and posterior.
+      kl_use_exact: Python `bool` indicating that the analytical KL divergence
+        should be used rather than a Monte Carlo approximation.
+      activation: Activation function to use.
+        If you don't specify anything, no activation is applied
+        (ie. "linear" activation: `a(x) = x`).
+      use_bias: Boolean, whether the layer uses a bias vector.
+      activity_regularizer: Regularizer function applied to
+        the output of the layer (its "activation")..
+      **kwargs: Extra arguments forwarded to `tf.keras.layers.Layer`.
+    """
+    super(DenseFlipout, self).__init__(
+        units,
+        make_posterior_fn,
+        make_prior_fn,
+        kl_weight=None,
+        kl_use_exact=False,
+        activation=None,
+        use_bias=True,
+        activity_regularizer=None,
+        **kwargs)
+
+    self.seed = seed
+
+  def _apply_variational_kernel(self, inputs, kernel):
+
+    seed_stream = SeedStream(self.seed, salt='DenseFlipout')
+
+    dtype = tf.as_dtype(self.dtype or tf.keras.backend.floatx())
+    inputs = tf.cast(inputs, dtype, name='inputs')
+    input_shape = tf.shape(inputs)
+    batch_shape = input_shape[:-1]
+    sign_input = tfp_random.rademacher(
+      input_shape,
+      dtype=inputs.dtype,
+      seed=seed_stream())
+    sign_output = tfp_random.rademacher(
+      tf.concat([batch_shape,
+                 tf.expand_dims(self.units, 0)], 0),
+      dtype=inputs.dtype,
+      seed=seed_stream())
+
+    perturbed_inputs = tf.matmul(
+        inputs * sign_input, kernel) * sign_output
+    return perturbed_inputs
