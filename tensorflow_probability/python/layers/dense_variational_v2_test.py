@@ -96,5 +96,28 @@ class DenseVariationalLayerTest(test_util.TestCase):
     assert isinstance(yhat, tfd.Distribution)
 
 
+@test_util.test_all_tf_execution_regimes
+class DenseFlipoutTest(test_util.TestCase):
+
+  def test_end_to_end(self):
+    # Get dataset.
+    y, x, x_tst = create_dataset()
+
+    # Build model.
+    model = tf.keras.Sequential([
+        tfp.layers.DenseFlipout(1, posterior_mean_field, prior_trainable),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc=t, scale=1)),
+    ])
+
+    # Do inference.
+    model.compile(optimizer=tf.optimizers.Adam(learning_rate=0.05),
+                  loss=negloglik)
+    model.fit(x, y, epochs=2, verbose=False)
+
+    # Profit.
+    yhat = model(x_tst)
+    assert isinstance(yhat, tfd.Distribution)
+
+
 if __name__ == '__main__':
   tf.test.main()
