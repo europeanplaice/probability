@@ -24,7 +24,7 @@ from tensorflow_probability.python.layers.conv_variational import Convolution2DF
 from tensorflow_probability.python.layers.conv_variational import Convolution2DReparameterization
 from tensorflow_probability.python.layers.conv_variational import Convolution3DFlipout
 from tensorflow_probability.python.layers.conv_variational import Convolution3DReparameterization
-from tensorflow_probability.python.layers.dense_variational import DenseFlipout
+from tensorflow_probability.python.layers.dense_variational_v2 import DenseFlipout
 from tensorflow_probability.python.layers.dense_variational import DenseLocalReparameterization
 from tensorflow_probability.python.layers.dense_variational import DenseReparameterization
 from tensorflow_probability.python.layers.dense_variational_v2 import DenseVariational
